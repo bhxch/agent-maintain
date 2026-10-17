@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# backup-file —— 把本机文件按真实绝对路径快照进本仓库 backup/，内容有变化才 commit
+# 用法: bin/backup-file -m "why" [--force] <file> [<file>...]
+# 映射: /home/<用户名>/.claude/CLAUDE.md -> backup/home/<用户名>/.claude/CLAUDE.md
+# 环境变量 BACKUP_REPO_ROOT 可覆盖目标仓库（仅测试用）。
+set -euo pipefail
+
+usage() {
+  echo "用法: bin/backup-file -m \"why\" [--force] <file> [<file>...]" >&2
+  exit 2
+}
+
+why=""
+force=0
+files=()
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -m)
+      [ $# -ge 2 ] || usage
+      why="$2"; shift 2
+      ;;
+    --force)
+      force=1; shift
+      ;;
+    -h|--help)
+      echo "用法: bin/backup-file -m \"why\" [--force] <file> [<file>...]"
+      exit 0
+      ;;
+    -*)
+      echo "未知参数: $1" >&2; usage
+      ;;
+    *)
+      files+=("$1"); shift
+      ;;
+  esac
+done
+
+[ -n "$why" ] || { echo "错误: -m \"why\" 必填，commit 先说清 why" >&2; usage; }
+[ "${#files[@]}" -gt 0 ] || { echo "错误: 未指定要备份的文件" >&2; usage; }
+
+# 以脚本自身真实路径定位仓库 root，任何 cwd 下都可用
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+REPO_ROOT="${BACKUP_REPO_ROOT:-$(dirname "$SCRIPT_DIR")}"
+
+# 密钥/凭据类路径一律拒绝，防止机密进仓库
+SECRET_PAT='(^|/)\.ssh(/|$)|/id_(rsa|ed25519|ecdsa)(\.|$)|\.pem$|\.key$|(^|/)\.env(\.|$)|credentials|token'
+
+changed=()
+for f in "${files[@]}"; do
+  real="$(readlink -f -- "$f")"
+  if [ ! -f "$real" ]; then
+    echo "错误: $f 不是普通文件（不存在或为目录）" >&2
+    exit 1
+  fi
+  if [ "$force" -eq 0 ] && printf '%s' "$real" | grep -Eq "$SECRET_PAT"; then
+    echo "错误: $real 疑似密钥/凭据文件，拒绝备份（确需备份加 --force）" >&2
+    exit 1
+  fi
+  dest="$REPO_ROOT/backup$real"
+  mkdir -p "$(dirname "$dest")"
+  if [ -f "$dest" ] && cmp -s -- "$real" "$dest"; then
+    echo "跳过（内容未变）: $real"
+  else
+    cp -p -- "$real" "$dest"
+    changed+=("$dest")
+    echo "已备份: $real -> ${dest#"$REPO_ROOT"/}"
+  fi
+done
+
+if [ "${#changed[@]}" -eq 0 ]; then
+  echo "无内容变化，不产生 commit"
+  exit 0
+fi
+
+git -C "$REPO_ROOT" add -- "${changed[@]}"
+git -C "$REPO_ROOT" commit -m "backup: $why"
