@@ -10,7 +10,7 @@
 agent-maintain/
 ├── AGENTS.md          # agent 行为规范（强约束，每次会话必须遵守）
 ├── README.md          # 本文件
-├── action/            # 维护流水账
+├── action/            # 维护流水账（.gitkeep 仅占位）
 │   └── 202610/        # 按 YYYYMM 建子目录
 │       └── 20261017-概要.md   # 文件名 YYYYMMDD-概要，同一天内倒序追加
 ├── backup/            # 本机文件快照，按真实绝对路径映射
@@ -18,8 +18,6 @@ agent-maintain/
 └── bin/
     └── backup-file    # 备份脚本：快照外部文件进 backup/ 并自动 commit
 ```
-
-> `action/`、`backup/` 为空目录时不入 git。克隆后若不存在，先 `mkdir -p action backup`。
 
 ## 两类记录
 
